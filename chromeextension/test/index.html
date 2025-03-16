@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beautiful Document</title>
+  <style>
+    /* General Styling */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9f9f9;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    /* Button Styling */
+    #su {
+      min-height: 50px;
+      min-width: 200px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      transition:
+        background-color 0.3s ease,
+        transform 0.2s ease;
+    }
+
+    #su:hover {
+      background-color: #0056b3;
+      transform: scale(1.05);
+    }
+
+    /* Link Section Styling */
+    .link-section {
+      margin-top: 30px;
+      text-align: center;
+    }
+
+    .link-section a {
+      display: block;
+      margin: 10px 0;
+      color: #007bff;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .link-section a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <button name="next" onclick="clicker()">Next Button</button>
+
+  <div class="link-section">
+    <h2>Useful Links</h2>
+    <a href=""> psudo </a>
+
+    <a href="https://i.postimg.cc/4JTZ7dHj/Screenshot-from-2025-01-07-20-41-09.png?dl=1" target="_blank">
+      Screenshot 1
+    </a>
+    <a href="https://i.postimg.cc/JrrLx2qq/Screenshot-from-2024-12-30-21-16-22.png?dl=1" target="_blank">
+      Screenshot 2
+    </a>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+
+</html>
