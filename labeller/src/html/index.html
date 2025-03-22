@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file:; script-src 'self'"
+    />
+    <meta
+      http-equiv="X-Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file:; script-src 'self'"
+    />
+    <title>Image Label</title>
+    <link rel="stylesheet" type="text/css" href="index.css" />
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="controls">
+        <button id="openDir">Open Directory</button>
+        <span id="selectedDir">No directory selected</span>
+      </div>
+    </div>
+    <script src="../renderer.js"></script>
+  </body>
+</html>

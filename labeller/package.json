@@ -1,0 +1,19 @@
+{
+  "name": "labeller",
+  "version": "1.0.0",
+  "description": "A labelling toolkit for specific purpose",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "github.com/Aashish1-1-1/papita/labeller"
+  },
+  "author": "Aashish Adhikari (aashishadhikari693@gmail.com)",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^35.0.3"
+  }
+}
