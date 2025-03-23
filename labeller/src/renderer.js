@@ -5,7 +5,33 @@ let isDrawing = false;
 let startX, startY;
 let currentBox = null;
 let currentImageDimensions = { width: 0, height: 0 };
+let canvasScaleInfo = {
+  offsetX: 0,
+  offsetY: 0,
+  displayWidth: 0,
+  displayHeight: 0,
+  scale: 1,
+};
+
+function debounce(func, wait) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
 let selectedLabelType = "front"; // Default label type
+
+// Resize handler with debounce to avoid too many rapid redraws
+window.addEventListener(
+  "resize",
+  debounce(function () {
+    if (currentImageIndex >= 0 && currentImages.length > 0) {
+      showImage(currentImageIndex);
+    }
+  }, 200),
+);
 
 document.getElementById("openDir").addEventListener("click", async () => {
   const dirPath = await window.electronAPI.selectDirectory();
@@ -59,6 +85,7 @@ async function loadImages() {
   // Drawing area
   const drawingContainer = document.createElement("div");
   drawingContainer.className = "drawing-container";
+  drawingContainer.id = "drawingContainer";
 
   const imageDisplay = document.createElement("div");
   imageDisplay.id = "imageDisplay";
@@ -72,6 +99,11 @@ async function loadImages() {
   canvas.addEventListener("mousedown", startDrawingBox);
   canvas.addEventListener("mousemove", drawBox);
   canvas.addEventListener("mouseup", finishDrawingBox);
+  canvas.addEventListener("mouseleave", () => {
+    if (isDrawing) {
+      finishDrawingBox({ clientX: 0, clientY: 0, cancelDrawing: true });
+    }
+  });
 
   drawingContainer.appendChild(imageDisplay);
   drawingContainer.appendChild(canvas);
@@ -121,11 +153,20 @@ async function loadImages() {
   saveButton.textContent = "Save Labels";
   saveButton.addEventListener("click", saveImageLabels);
 
+  // Add debug info display
+  const debugInfoDiv = document.createElement("div");
+  debugInfoDiv.id = "debugInfo";
+  debugInfoDiv.style.fontSize = "10px";
+  debugInfoDiv.style.fontFamily = "monospace";
+  debugInfoDiv.style.marginTop = "10px";
+  debugInfoDiv.style.whiteSpace = "pre";
+
   actionButtons.appendChild(clearButton);
   actionButtons.appendChild(saveButton);
 
   labelControls.appendChild(labelTypeForm);
   labelControls.appendChild(actionButtons);
+  labelControls.appendChild(debugInfoDiv);
 
   // Bounding box list
   const boxListContainer = document.createElement("div");
@@ -179,9 +220,6 @@ async function showImage(index) {
   if (currentImages.length === 0 || index < 0 || index >= currentImages.length)
     return;
 
-  // Reset bounding boxes for new image
-  currentBoundingBoxes = [];
-
   const imageDisplay = document.getElementById("imageDisplay");
   const imageCounter = document.getElementById("imageCounter");
   const canvas = document.getElementById("boundingBoxCanvas");
@@ -202,12 +240,12 @@ async function showImage(index) {
 
   // Handle image loading to set canvas dimensions
   img.onload = function () {
-    // Store image dimensions for bounding box calculations
+    // Store original image dimensions
     currentImageDimensions.width = img.naturalWidth;
     currentImageDimensions.height = img.naturalHeight;
 
-    // Set canvas dimensions to match the image
-    const container = document.querySelector(".drawing-container");
+    // Get the container dimensions
+    const container = document.getElementById("drawingContainer");
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
 
@@ -216,18 +254,38 @@ async function showImage(index) {
     const scaleHeight = containerHeight / img.naturalHeight;
     const scale = Math.min(scaleWidth, scaleHeight, 1); // Don't scale up small images
 
-    const displayWidth = img.naturalWidth * scale;
-    const displayHeight = img.naturalHeight * scale;
+    // Calculate displayed dimensions
+    const displayWidth = Math.floor(img.naturalWidth * scale);
+    const displayHeight = Math.floor(img.naturalHeight * scale);
 
-    // Set the image size
+    // Calculate offsets for centering the image in the container
+    const offsetX = Math.max(
+      0,
+      Math.floor((containerWidth - displayWidth) / 2),
+    );
+    const offsetY = Math.max(
+      0,
+      Math.floor((containerHeight - displayHeight) / 2),
+    );
+
+    // Store all scaling info for coordinate conversions
+    canvasScaleInfo = {
+      offsetX,
+      offsetY,
+      displayWidth,
+      displayHeight,
+      scale,
+    };
+
+    // Set the image size and position
     img.style.width = `${displayWidth}px`;
     img.style.height = `${displayHeight}px`;
 
-    // Set canvas size to match displayed image
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
-    canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
+    // Update the canvas positioning to match the image
+    canvas.width = containerWidth;
+    canvas.height = containerHeight;
+    canvas.style.width = `${containerWidth}px`;
+    canvas.style.height = `${containerHeight}px`;
 
     // Add image name/label
     const label = document.createElement("div");
@@ -235,12 +293,54 @@ async function showImage(index) {
     label.textContent = currentImages[index].name;
     imageDisplay.appendChild(label);
 
+    // Position the image display with proper centering
+    imageDisplay.style.position = "absolute";
+    imageDisplay.style.left = `${offsetX}px`;
+    imageDisplay.style.top = `${offsetY}px`;
+
     // Attempt to load existing labels for this image
     tryLoadExistingLabels(currentImages[index].name);
+
+    // Update debug info
+    updateDebugInfo();
+
+    // Redraw any existing bounding boxes with the new scale
+    redrawCanvas();
   };
 
   imageDisplay.appendChild(img);
   updateBoundingBoxList();
+}
+
+function updateDebugInfo() {
+  const debugInfo = document.getElementById("debugInfo");
+  if (!debugInfo) return;
+
+  debugInfo.textContent = `Image: ${currentImageDimensions.width}x${currentImageDimensions.height}
+Display: ${canvasScaleInfo.displayWidth}x${canvasScaleInfo.displayHeight}
+Scale: ${canvasScaleInfo.scale.toFixed(3)}
+Offset: (${canvasScaleInfo.offsetX}, ${canvasScaleInfo.offsetY})`;
+}
+
+// Convert from screen coordinates to normalized (0-1) image coordinates
+function screenToNormalizedCoords(screenX, screenY) {
+  // Adjust for the offset of the image within the container
+  const adjustedX = screenX - canvasScaleInfo.offsetX;
+  const adjustedY = screenY - canvasScaleInfo.offsetY;
+
+  // Convert to the original image coordinates (0-1)
+  return {
+    x: Math.max(0, Math.min(1, adjustedX / canvasScaleInfo.displayWidth)),
+    y: Math.max(0, Math.min(1, adjustedY / canvasScaleInfo.displayHeight)),
+  };
+}
+
+// Convert from normalized (0-1) image coordinates to screen coordinates
+function normalizedToScreenCoords(normalizedX, normalizedY) {
+  return {
+    x: normalizedX * canvasScaleInfo.displayWidth + canvasScaleInfo.offsetX,
+    y: normalizedY * canvasScaleInfo.displayHeight + canvasScaleInfo.offsetY,
+  };
 }
 
 async function tryLoadExistingLabels(imageName) {
@@ -253,11 +353,25 @@ function startDrawingBox(e) {
   const canvas = document.getElementById("boundingBoxCanvas");
   const rect = canvas.getBoundingClientRect();
 
-  startX = e.clientX - rect.left;
-  startY = e.clientY - rect.top;
+  // Get the mouse position relative to the canvas
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  // Check if the click is within the image bounds
+  if (
+    mouseX < canvasScaleInfo.offsetX ||
+    mouseY < canvasScaleInfo.offsetY ||
+    mouseX > canvasScaleInfo.offsetX + canvasScaleInfo.displayWidth ||
+    mouseY > canvasScaleInfo.offsetY + canvasScaleInfo.displayHeight
+  ) {
+    return; // Ignore clicks outside the image area
+  }
+
+  startX = mouseX;
+  startY = mouseY;
   isDrawing = true;
 
-  // Create a new box
+  // Create a new box (initial size is 0)
   currentBox = {
     x: startX,
     y: startY,
@@ -271,13 +385,12 @@ function drawBox(e) {
   if (!isDrawing) return;
 
   const canvas = document.getElementById("boundingBoxCanvas");
-  const ctx = canvas.getContext("2d");
   const rect = canvas.getBoundingClientRect();
 
   const currentX = e.clientX - rect.left;
   const currentY = e.clientY - rect.top;
 
-  // Update the current box dimensions
+  // Calculate dimensions based on current mouse position
   currentBox.width = currentX - startX;
   currentBox.height = currentY - startY;
 
@@ -285,6 +398,7 @@ function drawBox(e) {
   redrawCanvas();
 
   // Draw the current box
+  const ctx = canvas.getContext("2d");
   drawBoxOnCanvas(ctx, currentBox, true);
 }
 
@@ -292,26 +406,41 @@ function finishDrawingBox(e) {
   if (!isDrawing) return;
   isDrawing = false;
 
+  // If called from mouseleave event with cancelDrawing flag, just cancel
+  if (e.cancelDrawing) {
+    currentBox = null;
+    redrawCanvas();
+    return;
+  }
+
   const canvas = document.getElementById("boundingBoxCanvas");
   const rect = canvas.getBoundingClientRect();
 
   const endX = e.clientX - rect.left;
   const endY = e.clientY - rect.top;
 
-  // Ensure box has positive width and height
+  // Calculate correct coordinates
   let x = Math.min(startX, endX);
   let y = Math.min(startY, endY);
   let width = Math.abs(endX - startX);
   let height = Math.abs(endY - startY);
 
-  // Only add the box if it has some size
+  // Only add the box if it has some minimum size
   if (width > 5 && height > 5) {
-    // Normalize coordinates to 0-1 range relative to the image
+    // Convert start coordinates to normalized coordinates
+    const startNormalized = screenToNormalizedCoords(x, y);
+
+    // Calculate width and height in normalized coordinates
+    const endNormalized = screenToNormalizedCoords(x + width, y + height);
+    const normalizedWidth = endNormalized.x - startNormalized.x;
+    const normalizedHeight = endNormalized.y - startNormalized.y;
+
+    // Create the normalized box
     const normalizedBox = {
-      x: x / canvas.width,
-      y: y / canvas.height,
-      width: width / canvas.width,
-      height: height / canvas.height,
+      x: startNormalized.x,
+      y: startNormalized.y,
+      width: normalizedWidth,
+      height: normalizedHeight,
       type: selectedLabelType,
     };
 
@@ -334,17 +463,23 @@ function redrawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Draw all saved boxes
-  currentBoundingBoxes.forEach((box) => {
-    // Convert normalized coordinates back to canvas pixels
-    const canvasBox = {
-      x: box.x * canvas.width,
-      y: box.y * canvas.height,
-      width: box.width * canvas.width,
-      height: box.height * canvas.height,
-      type: box.type,
+  currentBoundingBoxes.forEach((normalizedBox) => {
+    // Convert the normalized box to screen coordinates
+    const start = normalizedToScreenCoords(normalizedBox.x, normalizedBox.y);
+    const end = normalizedToScreenCoords(
+      normalizedBox.x + normalizedBox.width,
+      normalizedBox.y + normalizedBox.height,
+    );
+
+    const screenBox = {
+      x: start.x,
+      y: start.y,
+      width: end.x - start.x,
+      height: end.y - start.y,
+      type: normalizedBox.type,
     };
 
-    drawBoxOnCanvas(ctx, canvasBox, false);
+    drawBoxOnCanvas(ctx, screenBox, false);
   });
 }
 
@@ -368,19 +503,25 @@ function drawBoxOnCanvas(ctx, box, isActive) {
     ctx.setLineDash([]);
   }
 
+  // Account for any direction of drawing
+  let x = box.width < 0 ? box.x + box.width : box.x;
+  let y = box.height < 0 ? box.y + box.height : box.y;
+  let width = Math.abs(box.width);
+  let height = Math.abs(box.height);
+
   // Draw the box
   ctx.beginPath();
   ctx.lineWidth = 2;
   ctx.strokeStyle = strokeColor;
   ctx.fillStyle = fillColor;
-  ctx.rect(box.x, box.y, box.width, box.height);
+  ctx.rect(x, y, width, height);
   ctx.fill();
   ctx.stroke();
 
   // Draw label
   ctx.font = "12px Arial";
   ctx.fillStyle = strokeColor;
-  ctx.fillText(box.type, box.x + 5, box.y + 15);
+  ctx.fillText(box.type, x + 5, y + 15);
 
   // Reset dash pattern
   ctx.setLineDash([]);
@@ -401,8 +542,14 @@ function updateBoundingBoxList() {
     const boxItem = document.createElement("li");
     boxItem.className = `box-item ${box.type}`;
 
+    // Calculate pixel values for display in list
+    const pixelX = Math.round(box.x * currentImageDimensions.width);
+    const pixelY = Math.round(box.y * currentImageDimensions.height);
+    const pixelWidth = Math.round(box.width * currentImageDimensions.width);
+    const pixelHeight = Math.round(box.height * currentImageDimensions.height);
+
     const boxInfo = document.createElement("span");
-    boxInfo.textContent = `Box ${index + 1}: ${box.type}`;
+    boxInfo.textContent = `Box ${index + 1}: ${box.type} (${pixelX},${pixelY},${pixelWidth}x${pixelHeight})`;
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "delete-box";
@@ -439,6 +586,23 @@ async function saveImageLabels() {
     }
   }
 
+  // Calculate all pixel values from normalized coordinates for saving
+  const boundingBoxesWithPixels = currentBoundingBoxes.map((box) => {
+    // Calculate pixel values directly from normalized coordinates
+    const pixelX = Math.round(box.x * currentImageDimensions.width);
+    const pixelY = Math.round(box.y * currentImageDimensions.height);
+    const pixelWidth = Math.round(box.width * currentImageDimensions.width);
+    const pixelHeight = Math.round(box.height * currentImageDimensions.height);
+
+    return {
+      ...box,
+      pixelX,
+      pixelY,
+      pixelWidth,
+      pixelHeight,
+    };
+  });
+
   // Prepare the label data
   const labelData = {
     filename: currentImage.name,
@@ -446,14 +610,7 @@ async function saveImageLabels() {
       width: currentImageDimensions.width,
       height: currentImageDimensions.height,
     },
-    boundingBoxes: currentBoundingBoxes.map((box) => ({
-      ...box,
-      // Add pixel values alongside normalized values for convenience
-      pixelX: Math.round(box.x * currentImageDimensions.width),
-      pixelY: Math.round(box.y * currentImageDimensions.height),
-      pixelWidth: Math.round(box.width * currentImageDimensions.width),
-      pixelHeight: Math.round(box.height * currentImageDimensions.height),
-    })),
+    boundingBoxes: boundingBoxesWithPixels,
   };
 
   try {
@@ -489,6 +646,49 @@ async function saveImageLabels() {
     alert(`Error saving labels: ${error.message}`);
   }
 }
+
+// Process boxes function for the main process
+function processBoxes(imagePath, imageName, labelData, dir, type) {
+  const path = require("path");
+  const sharp = require("sharp");
+
+  return Promise.all(
+    labelData.boundingBoxes
+      .filter((box) => box.type === type)
+      .map(async (box, index) => {
+        const outputFileName = `${imageName.replace(/\.[^/.]+$/, "")}_${type}_${index + 1}${path.extname(imageName)}`;
+        const outputPath = path.join(dir, outputFileName);
+
+        // Use the pre-calculated pixel values from the label data
+        const left = Math.max(0, box.pixelX);
+        const top = Math.max(0, box.pixelY);
+        const width = Math.min(
+          Math.max(1, box.pixelWidth),
+          labelData.imageDimensions.width - left,
+        );
+        const height = Math.min(
+          Math.max(1, box.pixelHeight),
+          labelData.imageDimensions.height - top,
+        );
+
+        try {
+          await sharp(imagePath)
+            .extract({
+              left,
+              top,
+              width,
+              height,
+            })
+            .toFile(outputPath);
+          return outputFileName;
+        } catch (err) {
+          console.error(`Error processing ${type} box:`, err);
+          return null;
+        }
+      }),
+  );
+}
+
 function showNextImage() {
   if (currentImages.length === 0) return;
 

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const sharp = require("sharp"); // We'll need to add the sharp package for image manipulation
+const sharp = require("sharp");
 
 let mainWindow;
 let selectedDirectory = null;
@@ -14,6 +14,7 @@ app.whenReady().then(() => {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      enableRemoteModule: false, // Explicitly disabled for security
     },
   });
   mainWindow.loadFile("src/html/index.html");
@@ -34,13 +35,12 @@ ipcMain.handle("read-directory", async () => {
   if (!selectedDirectory) return [];
   try {
     const files = fs.readdirSync(selectedDirectory);
-    const imageFiles = files.filter((file) =>
-      /\.(jpg|jpeg|png|gif|bmp)$/i.test(file),
-    );
-    return imageFiles.map((file) => ({
-      path: path.join(selectedDirectory, file),
-      name: file,
-    }));
+    return files
+      .filter((file) => /\.(jpg|jpeg|png|gif|bmp)$/i.test(file))
+      .map((file) => ({
+        path: path.join(selectedDirectory, file),
+        name: file,
+      }));
   } catch (error) {
     console.error("Error reading directory:", error);
     return [];
@@ -52,88 +52,63 @@ ipcMain.handle("save-labels", async (_, imageName, labelData) => {
     return { success: false, error: "No directory or image selected" };
 
   try {
-    // Create a labels directory if it doesn't exist
     const labelsDir = path.join(selectedDirectory, "labels");
-    if (!fs.existsSync(labelsDir)) {
-      fs.mkdirSync(labelsDir);
-    }
+    if (!fs.existsSync(labelsDir)) fs.mkdirSync(labelsDir, { recursive: true });
 
-    // Create front and back subdirectories if they don't exist
     const frontDir = path.join(labelsDir, "front");
     const backDir = path.join(labelsDir, "back");
+    [frontDir, backDir].forEach((dir) => {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    });
 
-    if (!fs.existsSync(frontDir)) {
-      fs.mkdirSync(frontDir);
-    }
-
-    if (!fs.existsSync(backDir)) {
-      fs.mkdirSync(backDir);
-    }
-
-    // Save the label data to a JSON file
-    const labelFileName = imageName.replace(/\.[^/.]+$/, "") + ".json";
-    const labelFilePath = path.join(labelsDir, labelFileName);
+    const labelFilePath = path.join(labelsDir, `${imageName}.json`);
     fs.writeFileSync(labelFilePath, JSON.stringify(labelData, null, 2));
 
-    // Original image path
     const imagePath = path.join(selectedDirectory, imageName);
 
-    // Group bounding boxes by type
-    const frontBoxes = labelData.boundingBoxes.filter(
-      (box) => box.type === "front",
-    );
-    const backBoxes = labelData.boundingBoxes.filter(
-      (box) => box.type === "back",
-    );
-
-    // Process and save each cropped image
-    const savedImages = {
-      front: [],
-      back: [],
+    const processBoxes = async (boxes, dir, type) => {
+      return Promise.all(
+        boxes.map(async (box, index) => {
+          const outputFileName = `${imageName.replace(/\.[^/.]+$/, "")}_${type}_${index + 1}${path.extname(imageName)}`;
+          const outputPath = path.join(dir, outputFileName);
+          try {
+            await sharp(imagePath)
+              .extract({
+                left: Math.max(0, box.pixelX),
+                top: Math.max(0, box.pixelY),
+                width: Math.max(1, box.pixelWidth),
+                height: Math.max(1, box.pixelHeight),
+              })
+              .toFile(outputPath);
+            return outputFileName;
+          } catch (err) {
+            console.error(`Error processing ${type} box:`, err);
+            return null;
+          }
+        }),
+      );
     };
 
-    // Process front boxes
-    for (let i = 0; i < frontBoxes.length; i++) {
-      const box = frontBoxes[i];
-      const boxFileName = `${imageName.replace(/\.[^/.]+$/, "")}_front_${i + 1}${path.extname(imageName)}`;
-      const outputPath = path.join(frontDir, boxFileName);
-
-      // Crop the image using sharp
-      await sharp(imagePath)
-        .extract({
-          left: box.pixelX,
-          top: box.pixelY,
-          width: box.pixelWidth,
-          height: box.pixelHeight,
-        })
-        .toFile(outputPath);
-
-      savedImages.front.push(boxFileName);
-    }
-
-    // Process back boxes
-    for (let i = 0; i < backBoxes.length; i++) {
-      const box = backBoxes[i];
-      const boxFileName = `${imageName.replace(/\.[^/.]+$/, "")}_back_${i + 1}${path.extname(imageName)}`;
-      const outputPath = path.join(backDir, boxFileName);
-
-      // Crop the image using sharp
-      await sharp(imagePath)
-        .extract({
-          left: box.pixelX,
-          top: box.pixelY,
-          width: box.pixelWidth,
-          height: box.pixelHeight,
-        })
-        .toFile(outputPath);
-
-      savedImages.back.push(boxFileName);
-    }
+    const [frontImages, backImages] = await Promise.all([
+      processBoxes(
+        labelData.boundingBoxes.filter((b) => b.type === "front"),
+        frontDir,
+        "front",
+      ),
+      processBoxes(
+        labelData.boundingBoxes.filter((b) => b.type === "back"),
+        backDir,
+        "back",
+      ),
+    ]);
 
     return {
       success: true,
       path: labelFilePath,
-      savedImages: savedImages,
+      savedImages: {
+        front: frontImages.filter(Boolean),
+        back: backImages.filter(Boolean),
+      },
     };
   } catch (error) {
     console.error("Error saving labels:", error);
@@ -142,7 +117,5 @@ ipcMain.handle("save-labels", async (_, imageName, labelData) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });
