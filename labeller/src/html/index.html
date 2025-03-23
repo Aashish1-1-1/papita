@@ -10,16 +10,19 @@
       http-equiv="X-Content-Security-Policy"
       content="default-src 'self'; img-src 'self' file:; script-src 'self'"
     />
-    <title>Image Label</title>
+    <title>Document Image Labeler</title>
     <link rel="stylesheet" type="text/css" href="index.css" />
   </head>
-
   <body>
     <div class="container">
-      <div class="controls">
-        <button id="openDir">Open Directory</button>
-        <span id="selectedDir">No directory selected</span>
-      </div>
+      <header>
+        <h1>Document Image Labeler</h1>
+        <div class="controls">
+          <button id="openDir">Open Directory</button>
+          <span id="selectedDir">No directory selected</span>
+        </div>
+      </header>
+      <div id="imageContainer"></div>
     </div>
     <script src="../renderer.js"></script>
   </body>
