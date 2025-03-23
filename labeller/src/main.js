@@ -61,15 +61,22 @@ ipcMain.handle("save-labels", async (_, imageName, labelData) => {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     });
 
-    const labelFilePath = path.join(labelsDir, `${imageName}.json`);
-    fs.writeFileSync(labelFilePath, JSON.stringify(labelData, null, 2));
+     const labelFilePath = path.join(labelsDir, `${imageName}.json`);
+    // fs.writeFileSync(labelFilePath, JSON.stringify(labelData, null, 2));
 
     const imagePath = path.join(selectedDirectory, imageName);
 
     const processBoxes = async (boxes, dir, type) => {
+      // Get the highest existing index in the directory
+      const existingFiles = fs.readdirSync(dir);
+      const existingIndices = existingFiles
+        .map((file) => parseInt(path.basename(file, path.extname(file)), 10))
+        .filter((num) => !isNaN(num));
+      const maxIndex = existingIndices.length > 0 ? Math.max(...existingIndices) : 0;
+    
       return Promise.all(
         boxes.map(async (box, index) => {
-          const outputFileName = `${imageName.replace(/\.[^/.]+$/, "")}_${type}_${index + 1}${path.extname(imageName)}`;
+          const outputFileName = `${maxIndex + index + 1}${path.extname(imageName)}`;
           const outputPath = path.join(dir, outputFileName);
           try {
             await sharp(imagePath)
@@ -88,7 +95,7 @@ ipcMain.handle("save-labels", async (_, imageName, labelData) => {
         }),
       );
     };
-
+    
     const [frontImages, backImages] = await Promise.all([
       processBoxes(
         labelData.boundingBoxes.filter((b) => b.type === "front"),
