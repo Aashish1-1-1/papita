@@ -78,10 +78,61 @@ async function loadImages() {
   nextButton.textContent = "Next";
   nextButton.addEventListener("click", showNextImage);
 
+  const manualIndexing = document.createElement("form");
+  manualIndexing.id = "manualindex";
+
+  // Create an input field for the index
+  const indexInput = document.createElement("input");
+  indexInput.type = "number";
+  indexInput.id = "index-input";
+  indexInput.placeholder = "Enter index";
+  indexInput.required = true;
+  indexInput.min = "0";
+
+  // Create a submit button
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.textContent = "Submit";
+
+  // Create a label for the form
+  const formLabel = document.createElement("label");
+  formLabel.textContent = "Manual indexing: ";
+  formLabel.htmlFor = "index-input";
+
+  manualIndexing.style.margin = "15px 0";
+  manualIndexing.style.display = "flex";
+  manualIndexing.style.gap = "10px";
+  indexInput.style.padding = "5px";
+  submitButton.style.padding = "5px 10px";
+  submitButton.style.cursor = "pointer";
+  // Append elements to the form
+  manualIndexing.appendChild(formLabel);
+  manualIndexing.appendChild(indexInput);
+  manualIndexing.appendChild(submitButton);
+  manualIndexing.addEventListener("submit", function (event) {
+    // Prevent default form submission behavior
+    event.preventDefault();
+
+    const index = parseInt(indexInput.value, 10);
+
+    // Validate that it's a valid number before proceeding
+    if (!isNaN(index) && index >= 0 && index < currentImages.length) {
+      currentImageIndex = index - 1;
+      showImage(index - 1);
+    } else {
+      // Alert the user if the index is invalid
+      alert(
+        `Please enter a valid index between 0 and ${currentImages.length - 1}`,
+      );
+    }
+
+    // Optional: Reset the form
+    this.reset();
+  });
   controlsDiv.appendChild(prevButton);
   controlsDiv.appendChild(imageCounter);
   controlsDiv.appendChild(nextButton);
-
+  controlsDiv.appendChild(manualIndexing);
   // Drawing area
   const drawingContainer = document.createElement("div");
   drawingContainer.className = "drawing-container";
@@ -703,7 +754,6 @@ function showPreviousImage() {
     (currentImageIndex - 1 + currentImages.length) % currentImages.length;
   showImage(currentImageIndex);
 }
-
 // Add keyboard navigation
 document.addEventListener("keydown", (event) => {
   if (event.key === "ArrowRight") {
