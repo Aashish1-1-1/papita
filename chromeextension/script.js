@@ -1,11 +1,12 @@
-function gotonext() {
+async function gotonext() {
+  downloadfile();
+  await new Promise((resolve) => setTimeout(resolve, 2000));
   const nextbutton = document.querySelector("[name='next']");
   if (!nextbutton) {
     console.error("Next button not found!");
     return;
   }
   nextbutton.click();
-  downloadfile();
 }
 
 function downloadfile() {
